@@ -1,103 +1,198 @@
-# 第2回：Cloudflare Hono 入門
+# 第2回: Hono で最初の API
 
-## 1. 今日の目標
-- Cloudflare Workers と Hono の概要を理解する
-- Hono プロジェクトを作成し「Hello World」を表示する
-- エラーが出たときのターミナルの読み方を知る
+## 今日のゴール
 
-## 2. Cloudflare Workers とは？
-通常のWebサーバーは「どこか1箇所のサーバー」で動きます。
-Cloudflare Workers は **世界中の300以上の拠点** にコードが配置され、ユーザーに一番近い場所で実行されます。そのため爆速です。
+- Hono のルートを1つ追加する
+- `/api/messages` にアクセスしてJSONを返す
+- ブラウザからWorkerまでの流れを追う
 
-## 3. Hono とは？
-日本発のWebフレームワークで、Cloudflare Workers 上で動かすのに最適化されています。
-- **超軽量**: ファイルサイズが非常に小さい
-- **TypeScript ファースト**: 型の恩恵をフルに受けられる
-- **Express ライク**: JavaScript の Express を使ったことがあれば馴染みやすい
+前回は雛形を動かしました。今回は、掲示板の「データを返す側」を作ります。
 
-## 4. ハンズオン：プロジェクト作成
-```bash
-npm create hono@latest my-app
-```
-選択肢が出たら：
-- **Which template do you want to use?** → `cloudflare-workers`
-- **Do you want to install project dependencies?** → `yes`
+---
 
-```bash
-cd my-app
-npm run dev
-```
-ブラウザで `http://localhost:8787` を開いて確認しましょう。
+## 前回まで
 
-## 5. コードを読む
-`src/index.ts` を開いてみましょう。
-```typescript
-import { Hono } from 'hono'
-
-const app = new Hono()
-
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
-
-export default app
+```text
+React画面  ← 表示できる
+Hono API   ← 雛形のまま
+D1         ← まだ使わない
 ```
 
-### コードの意味
-| コード | 意味 |
-|---|---|
-| `import { Hono } from 'hono'` | Hono ライブラリを読み込む |
-| `const app = new Hono()` | アプリケーションを作成 |
-| `app.get('/', ...)` | 「/」にGETリクエストが来たときの処理 |
-| `(c) => { ... }` | リクエストを処理する関数（`c` = Context） |
-| `c.text('...')` | テキストをレスポンスとして返す |
-| `export default app` | このファイルの「出口」を定義 |
+今回はここまで進めます。
 
-## 6. ルーティングの基本
-
-### パスパラメータ
-URLの一部を変数として受け取ります。
-```typescript
-// /user/123 にアクセスすると id = '123'
-app.get('/user/:id', (c) => {
-  const id = c.req.param('id')
-  return c.json({ message: `ユーザーID ${id} の詳細です。` })
-})
+```text
+Browser
+  ↓ GET /api/messages
+Hono
+  ↓
+JSON
 ```
 
-### クエリパラメータ
-`?` 以降のキーバリューを受け取ります。
-```typescript
-// /search?q=hono にアクセスすると query = 'hono'
-app.get('/search', (c) => {
-  const query = c.req.query('q')
-  return c.json({ result: `「${query}」の検索結果` })
-})
+---
+
+## Step 1: Worker側のファイルを開く
+
+テンプレートではHonoアプリは `src/worker/index.ts` 付近にあります。
+
+まず既存コードを読み、次を探します。
+
+- `new Hono()`
+- `app.get(...)`
+- `export default app`
+
+「どこから処理が始まり、どこでレスポンスを返しているか」を確認してください。
+
+---
+
+## Step 2: 仮の投稿データを用意する
+
+まだDBは使いません。メモリ上に仮データを置きます。
+
+```ts
+type Message = {
+  id: number
+  content: string
+  createdAt: string
+}
+
+const messages: Message[] = [
+  {
+    id: 1,
+    content: 'こんにちは',
+    createdAt: new Date().toISOString(),
+  },
+]
 ```
 
-### POST リクエスト（データの送信）
-```typescript
-app.post('/posts', async (c) => {
-  const body = await c.req.json()
-  return c.json({
-    message: 'データを受け取りました！',
-    receivedData: body
-  }, 201)
+これは学習用です。Workerのメモリは永続ストレージではないため、後でD1へ置き換えます。
+
+---
+
+## Step 3: GET APIを追加する
+
+```ts
+app.get('/api/messages', (c) => {
+  return c.json({ messages })
 })
 ```
 
-## 7. エラーが出たら？
-ターミナルに赤い文字が出ても慌てないでください。
-1. **エラーメッセージの最初の1行** を読む（何が問題か書いてある）
-2. **ファイル名と行番号** を探す（`src/index.ts:5:10` = 5行目10文字目）
-3. そこを見て、スペルミスや括弧の閉じ忘れがないか確認する
+保存したら開発サーバーを確認します。
 
-## 8. ハンズオン課題
-**「今日の占いAPI」を作ってみよう**
-- `/fortune` にGETリクエストが来たら、ランダムで `大吉` `中吉` `小吉` のどれかをJSONで返してください。
-- ヒント: `Math.random()` と配列を使います。
+ブラウザで次へアクセスします。
 
-## 9. まとめ
-- Hono アプリの基本構造: `import → new Hono() → ルート定義 → export`
-- `c.req.param()`, `c.req.query()`, `c.req.json()` でリクエストデータを取得。
-- エラーが出たら「最初の1行」と「ファイル名:行番号」を確認。
+```text
+http://localhost:5173/api/messages
+```
+
+ポート番号は環境によって異なるため、実際にはターミナルに表示されたURLを使ってください。
+
+### 期待する結果
+
+```json
+{
+  "messages": [
+    {
+      "id": 1,
+      "content": "こんにちは",
+      "createdAt": "..."
+    }
+  ]
+}
+```
+
+---
+
+## Step 4: ルーティングを理解する
+
+```ts
+app.get('/api/messages', ...)
+```
+
+は、次の意味です。
+
+```text
+GET      → HTTP method
+/api/messages → URL path
+(c)      → Hono Context
+c.json() → JSON response
+```
+
+### 追加練習
+
+```ts
+app.get('/api/hello/:name', (c) => {
+  const name = c.req.param('name')
+  return c.json({ message: `こんにちは、${name}さん` })
+})
+```
+
+`/api/hello/Taro` にアクセスして結果を確認します。
+
+---
+
+## Step 5: 404をわざと出す
+
+存在しないURLへアクセスします。
+
+```text
+/api/not-found
+```
+
+### 観察する
+
+- HTTP status は何番か
+- ブラウザには何が表示されるか
+- Networkタブではどう見えるか
+
+`404` は「Workerが壊れた」ではなく、**そのURLに対応するルートが見つからない**という意味です。
+
+---
+
+## Step 6: DevTools の Network を開く
+
+ブラウザのDevToolsを開き、Networkタブを確認します。
+
+最低限、次を見つけてください。
+
+- Request URL
+- Request Method
+- Status Code
+- Response
+
+この4つを見られるようになると、APIトラブルの切り分けがかなり楽になります。
+
+---
+
+## Step 7: 流れを言葉にする
+
+今起きていることは次の通りです。
+
+```text
+1. ブラウザが GET /api/messages を送る
+2. Hono がURLとmethodに合うルートを探す
+3. handler が messages を読む
+4. c.json() がHTTPレスポンスを返す
+5. ブラウザがJSONを受け取る
+```
+
+---
+
+## 完成チェック
+
+- [ ] `/api/messages` にアクセスするとJSONが返る
+- [ ] `GET` とURL pathの違いを説明できる
+- [ ] 存在しないURLで404を確認した
+- [ ] NetworkタブでURL / method / status / responseを確認できる
+- [ ] 今の `messages` が永続保存ではないと説明できる
+
+## 今日の一言説明
+
+> Hono の `app.get('/api/messages', ...)` は何を登録している？
+
+「GETで `/api/messages` が来たときに実行する処理」が説明できればOKです。
+
+---
+
+次: [第3回 Zod で入力を検証する](session-03.md)
+
+公式資料: https://hono.dev/docs/api/routing

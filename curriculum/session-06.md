@@ -1,130 +1,281 @@
-# 第6回：Cloudflare D1（データベース）
+# 第6回: D1 に永続化する
 
-## 1. 今日の目標
-- Cloudflare D1 の概要と「Bindings」の仕組みを理解する
-- SQL の基本を学ぶ
-- Hono から DB にデータを読み書きする
+## 今日のゴール
 
-## 2. D1 とは？
-D1 は Cloudflare が提供する **サーバーレスデータベース** です。
-SQLite ベースなので、軽量で高速。自分でサーバーを管理する必要がありません。
+- Cloudflare D1を作成してWorkerへBindingする
+- SQLでテーブルを作る
+- メモリ配列をD1へ置き換える
+- ローカル開発用DBと本番DBを区別する
 
-## 3. Bindings（バインディング）とは？
-Cloudflare Workers では、DB や ストレージに直接アクセスすることはできません。
-代わりに `wrangler.json` で「このWorkerにはこのDBを使わせる」と **紐付け（Binding）** を行います。
+ここまで投稿はメモリ上の配列に入れていました。今回は、再起動しても残るデータベースへ移します。
+
+---
+
+## 前回までの弱点
+
+```text
+Worker process
+  └─ messages[]
+```
+
+この配列は永続ストレージではありません。
+
+- 再起動で消える可能性がある
+- 複数のWorker実行環境で同じ配列を共有する仕組みではない
+- 本番データ保存には使えない
+
+そこでD1を使います。
+
+```text
+React
+  ↓
+Hono
+  ↓ Binding
+D1
+```
+
+---
+
+## Step 1: Cloudflareへログインする
+
+```bash
+npx wrangler login
+```
+
+ブラウザが開いたら、授業で使うCloudflareアカウントを認証します。
+
+---
+
+## Step 2: D1データベースを作ってBindingする
+
+2026年9月時点のWranglerでは、DB作成とWorker設定へのBinding追加をまとめて行えます。
+
+```bash
+npx wrangler d1 create message-board-db --binding DB --update-config
+```
+
+実行後、Wrangler設定ファイルを開きます。現行の公式Vite Reactテンプレートでは `wrangler.json` です。
+
+次のような `d1_databases` 設定が追加されていることを確認します。
 
 ```json
-// wrangler.json
 {
-  "name": "my-app",
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "my-db",
-      "database_id": "ここにIDが入る"
+      "database_name": "message-board-db",
+      "database_id": "実際に作成されたID"
     }
   ]
 }
 ```
 
-`"binding": "DB"` と書くと、コード内で `c.env.DB` としてアクセスできるようになります。
+別テンプレートなどで `wrangler.jsonc` を使っていても考え方は同じです。
 
-## 4. データベースの作成
+`binding: "DB"` は、Workerコードから `c.env.DB` として参照するための名前です。
+
+---
+
+## Step 3: Bindingの型を更新する
+
+Cloudflare設定からWorker用のTypeScript型を再生成します。
+
 ```bash
-npx wrangler d1 create my-db
-```
-表示された `database_id` を `wrangler.json` にコピペしてください。
-
-## 5. Hono で Bindings の型を定義する
-`c.env.DB` を TypeScript に認識させるため、型を定義します。
-```typescript
-type Bindings = {
-  DB: D1Database
-}
-
-const app = new Hono<{ Bindings: Bindings }>()
-
-// これで c.env.DB に型が付き、補完が効くようになる
+npm run cf-typegen
 ```
 
-## 6. テーブル定義（SQL入門）
-`schema.sql` を作成します。
+現行テンプレートでは `wrangler types` が実行され、`worker-configuration.d.ts` が更新されます。
+
+Workerはすでに次のように `Env` 型を使っています。
+
+```ts
+const app = new Hono<{ Bindings: Env }>()
+```
+
+型生成後、`Env` に `DB: D1Database` 相当のBindingが追加されていることを確認します。
+
+```text
+Wrangler設定にDBを書く
+  ↓
+npm run cf-typegen
+  ↓
+TypeScriptから c.env.DB が見える
+```
+
+Bindingを変更したら型も再生成する、という流れを覚えてください。
+
+---
+
+## Step 4: テーブル定義を作る
+
+プロジェクトルートに `schema.sql` を作ります。
+
 ```sql
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   content TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
 
-ローカルDBに反映します：
-```bash
-npx wrangler d1 execute my-db --local --file=./schema.sql
+### 読み方
+
+```text
+id         → 主キー、自動採番
+content    → 投稿本文、NULL不可
+created_at → 作成日時
 ```
 
-### SQL 基本チートシート
-| 操作 | SQL |
-|---|---|
-| 全件取得 | `SELECT * FROM messages` |
-| 条件付き | `SELECT * FROM messages WHERE id = ?` |
-| 挿入 | `INSERT INTO messages (content) VALUES (?)` |
-| 削除 | `DELETE FROM messages WHERE id = ?` |
-| 件数 | `SELECT COUNT(*) FROM messages` |
+Zodだけでなく、DBにも最低限の制約を持たせます。
 
-## 7. Hono からの DB 操作
-```typescript
-import { Hono } from 'hono'
-import { z } from 'zod'
-import { zValidator } from '@hono/zod-validator'
+---
 
-type Bindings = {
-  DB: D1Database
+## Step 5: ローカルDBへ適用する
+
+```bash
+npx wrangler d1 execute message-board-db --local --file=./schema.sql
+```
+
+`--local` が重要です。この時点では自分の開発環境用D1へSQLを実行しています。
+
+---
+
+## Step 6: メモリ配列をD1へ置き換える
+
+第5回で作った `const route = app...` は残します。
+
+**新しい `app.get()` / `app.post()` を追加するのではなく、既存routeのGETとPOSTの中身をD1版へ差し替えます。** Hono RPCの `AppType` もこのrouteから引き続き作れます。
+
+まずDBから受け取る行の型を用意します。
+
+```ts
+type MessageRow = {
+  id: number
+  content: string
+  created_at: string
 }
+```
 
-const app = new Hono<{ Bindings: Bindings }>()
+次にrouteをD1版へ変更します。
 
-// 全件取得
-app.get('/messages', async (c) => {
-  const { results } = await c.env.DB
-    .prepare('SELECT * FROM messages ORDER BY created_at DESC')
-    .all()
-  return c.json(results)
-})
+```ts
+const route = app
+  .get('/api/messages', async (c) => {
+    const result = await c.env.DB
+      .prepare(
+        'SELECT id, content, created_at FROM messages ORDER BY id DESC',
+      )
+      .all<MessageRow>()
 
-// 新規投稿
-app.post('/messages', zValidator('json', z.object({
-  content: z.string().min(1).max(140)
-})), async (c) => {
-  const { content } = c.req.valid('json')
-  await c.env.DB
-    .prepare('INSERT INTO messages (content) VALUES (?)')
-    .bind(content)
-    .run()
-  return c.json({ status: 'ok' }, 201)
-})
+    const messages = result.results.map((row) => ({
+      id: row.id,
+      content: row.content,
+      createdAt: row.created_at,
+    }))
 
-// 削除
-app.delete('/messages/:id', async (c) => {
-  const id = c.req.param('id')
-  await c.env.DB
-    .prepare('DELETE FROM messages WHERE id = ?')
-    .bind(id)
-    .run()
-  return c.json({ status: 'deleted' })
-})
+    return c.json({ messages })
+  })
+  .post(
+    '/api/messages',
+    zValidator('json', createMessageSchema),
+    async (c) => {
+      const input = c.req.valid('json')
 
+      await c.env.DB
+        .prepare('INSERT INTO messages (content) VALUES (?)')
+        .bind(input.content)
+        .run()
+
+      return c.json({ ok: true }, 201)
+    },
+  )
+
+export type AppType = typeof route
 export default app
 ```
 
-## 8. ハンズオン
-1. 上記の API を実装してください。
-2. APIクライアントなどから以下を確認してください：
-   - メッセージの投稿（POST）
-   - 一覧取得（GET）
-   - サーバー再起動後もデータが残っていること
+これで、メモリ上の `messages` 配列は不要になります。削除してください。
 
-## 9. まとめ
-- D1 は SQLite ベースのサーバーレス DB。サーバー管理不要。
-- `wrangler.json` で Binding を設定 → `c.env.DB` でアクセス可能に。
-- `Hono<{ Bindings: Bindings }>` で型を付けると補完が効く。
-- `prepare().bind().all()` / `.run()` でSQLを実行する。
+DB上の `created_at` と、API上の `createdAt` を変換している点にも注目します。
+
+「DBの都合をそのまま画面へ漏らさない」という境界の例です。
+
+---
+
+## Step 7: なぜ `.bind()` を使う？
+
+SQL文字列へ利用者入力を直接連結しないためです。
+
+避ける例:
+
+```ts
+// やらない
+`INSERT INTO messages (content) VALUES ('${input.content}')`
+```
+
+値はプレースホルダー `?` と `.bind()` で渡します。
+
+---
+
+## Step 8: RPCの型変化を確認する
+
+POSTレスポンスは、第5回の `{ message }` から `{ ok: true }` へ変わりました。
+
+React側では投稿成功後に一覧を再取得するため、レスポンス本文を使っていなければ大きな変更は不要です。もし古い `data.message` などを参照していれば、Hono RPCの型によってエディタが変更箇所を教えてくれます。
+
+API仕様を変えたら、**壊れた場所をTypeScriptに探してもらう**ことができます。
+
+---
+
+## Step 9: 再起動テスト
+
+1. ブラウザから投稿する
+2. 開発サーバーを終了する
+3. 再び `npm run dev`
+4. 一覧を開く
+
+ローカルD1に投稿が残っていることを確認します。
+
+---
+
+## Step 10: ローカルと本番を区別する
+
+```text
+--local  → ローカル開発用D1
+--remote → Cloudflare上のD1
+```
+
+この2つは同じデータではありません。
+
+「ローカルでテーブルを作ったから本番にもある」と思わないようにしてください。
+
+---
+
+## 完成チェック
+
+- [ ] D1を作成した
+- [ ] Wrangler設定に `DB` Bindingが追加された
+- [ ] `npm run cf-typegen` を実行した
+- [ ] `c.env.DB` に型補完が効く
+- [ ] ローカルDBへ `schema.sql` を適用した
+- [ ] 既存の `const route` をD1版へ差し替えた
+- [ ] メモリ上の `messages` 配列を削除した
+- [ ] GETがD1からデータを読む
+- [ ] POSTがD1へ保存する
+- [ ] SQLに入力値を直接文字列連結していない
+- [ ] 開発サーバー再起動後も投稿が残る
+- [ ] local DBとremote DBの違いを説明できる
+
+## 今日の一言説明
+
+> Bindingは何のためにある？
+
+「WorkerのコードとCloudflare上のD1などのリソースを、設定した名前でつなぐ」が説明できればOKです。
+
+---
+
+次: [第7回 公開・デバッグ・振り返り](session-07.md)
+
+公式資料:
+- https://developers.cloudflare.com/d1/wrangler-commands/
+- https://developers.cloudflare.com/workers/languages/typescript/
