@@ -1,140 +1,237 @@
-# 第4回：React 入門（Vite + React）
+# 第4回: React から API を使う
 
-## 1. 今日の目標
-- React の基本概念（コンポーネント、JSX、State）を理解する
-- Vite を使って React プロジェクトを作成する
-- ボタンを押すとカウントが増えるアプリを作る
+## 今日のゴール
 
-## 2. React とは？
-React は Facebook（Meta）が開発した **UI構築ライブラリ** です。
-画面を「コンポーネント」という部品に分けて作るのが特徴です。
+- Reactで投稿一覧を表示する
+- フォームからPOSTする
+- `useState` と `useEffect` が何をしているか説明する
+- APIエラーを画面とDevToolsの両方で確認する
 
-## 3. プロジェクト作成
-```bash
-npm create vite@latest my-frontend -- --template react-ts
-cd my-frontend
-npm install
-npm run dev
-```
-ブラウザで `http://localhost:5173` を開くと画面が表示されます。
+ここまでAPIだけで動いていた掲示板に、利用者が触る画面を付けます。
 
-## 4. JSX とは？
-HTML のような見た目だけど、JavaScript の中に書けるのが JSX です。
-```tsx
-// これは HTML ではなく JSX（JavaScriptの式）
-const element = <h1>Hello, world!</h1>
+---
+
+## 前回まで
+
+```text
+GET /api/messages   → 一覧取得
+POST /api/messages  → 投稿
+Zod                 → 不正入力を400
 ```
 
-### HTML との違い
-| HTML | JSX |
-|---|---|
-| `class="..."` | `className="..."` |
-| `for="..."` | `htmlFor="..."` |
-| 閉じタグ省略可 | すべて閉じる必要あり (`<br />`) |
-| 文字列のみ | `{}` で JavaScript の式を埋め込める |
+今回はこうなります。
 
-```tsx
-const name = 'Taro'
-const element = <h1>Hello, {name}!</h1>
-//                        ^^^^^^^^ JS の変数を埋め込んでいる
+```text
+React
+  ↓ fetch
+Hono API
+  ↓
+JSON
+  ↓
+Reactが画面更新
 ```
 
-## 5. コンポーネント
-関数が JSX を返すと、それがコンポーネントになります。
-```tsx
-// コンポーネント = 画面の「部品」
-function Greeting() {
-  return <h1>こんにちは！</h1>
-}
+同じVite/Worker構成の中で動いているため、`/api/messages` のような相対URLで呼び出せます。基本授業では別Originに分けないため、CORS設定は不要です。
 
-// 使うときは HTML タグのように書く
-function App() {
-  return (
-    <div>
-      <Greeting />
-      <Greeting />
-    </div>
-  )
+---
+
+## Step 1: React側の `App.tsx` を開く
+
+テンプレート内のReactアプリを探します。構成によって多少異なりますが、`src/react-app/.../App.tsx` 付近です。
+
+まず既存のサンプル表示を整理し、掲示板用の画面へ変更します。
+
+---
+
+## Step 2: 投稿の型を用意する
+
+```tsx
+type Message = {
+  id: number
+  content: string
+  createdAt: string
 }
 ```
 
-### Props（外から値を渡す）
-```tsx
-function Greeting({ name }: { name: string }) {
-  return <h1>こんにちは、{name}さん！</h1>
-}
+今回はまだフロントとバックで型を別々に書きます。
 
-function App() {
-  return (
-    <div>
-      <Greeting name="Taro" />
-      <Greeting name="Hanako" />
-    </div>
-  )
-}
-```
+**「二重管理になっている」ことを覚えておいてください。** 次回Hono RPCで改善します。
 
-## 6. State（状態管理）
-画面に表示される値を **動的に変えたい** ときは `useState` を使います。
+---
+
+## Step 3: Stateを用意する
 
 ```tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-function Counter() {
-  const [count, setCount] = useState(0)
-  //     ^^^^^^ 現在の値
-  //             ^^^^^^^^ 値を更新する関数
-
-  return (
-    <div>
-      <p>カウント: {count}</p>
-      <button onClick={() => setCount(count + 1)}>+1</button>
-    </div>
-  )
-}
-```
-
-**重要**: `count = count + 1` ではなく `setCount(count + 1)` で更新しないと画面が変わりません。React は `set関数` が呼ばれたときだけ画面を再描画します。
-
-## 7. useEffect（副作用）
-コンポーネントの表示後に「何かを実行したい」ときに使います。API通信でよく使います。
-
-```tsx
-import { useState, useEffect } from 'react'
-
-function DataLoader() {
-  const [message, setMessage] = useState('読み込み中...')
-
-  useEffect(() => {
-    // コンポーネント表示後に実行される
-    fetch('http://localhost:8787/')
-      .then(res => res.text())
-      .then(data => setMessage(data))
-  }, []) // [] = 最初の1回だけ実行
-
-  return <p>{message}</p>
-}
-```
-
-## 8. ハンズオン課題
-**「シンプルTODOリスト」を作ろう**
-1. 入力フォームとボタンを配置する
-2. ボタンを押すと、入力内容がリストに追加される
-3. リストは `useState` で管理する
-
-ヒント:
-```tsx
-const [todos, setTodos] = useState<string[]>([])
+const [messages, setMessages] = useState<Message[]>([])
 const [input, setInput] = useState('')
+const [error, setError] = useState('')
+```
 
-const addTodo = () => {
-  setTodos([...todos, input])
-  setInput('')
+役割は次の通りです。
+
+```text
+messages → 画面に表示する投稿一覧
+input    → 入力欄の現在値
+error    → 利用者へ見せるエラー
+```
+
+Stateを更新するとReactが再レンダーし、必要な部分が新しい値で描画されます。
+
+---
+
+## Step 4: 一覧取得関数を作る
+
+```tsx
+const loadMessages = async () => {
+  const res = await fetch('/api/messages')
+
+  if (!res.ok) {
+    throw new Error(`一覧取得に失敗しました: ${res.status}`)
+  }
+
+  const data = (await res.json()) as { messages: Message[] }
+  setMessages(data.messages)
 }
 ```
 
-## 9. まとめ
-- **JSX**: HTMLに似た構文を JavaScript 内に書ける。`{}` で式を埋め込む。
-- **コンポーネント**: 関数が JSX を返すと UI 部品になる。
-- **useState**: 画面に反映される「状態」を管理する。
-- **useEffect**: 表示後に実行したい処理（API通信など）を書く。
+### ここで見るポイント
+
+- `fetch()` はHTTP通信
+- `res.ok` はHTTP 200番台かどうか
+- `res.json()` はレスポンス本文をJSONとして読む
+- `setMessages()` でReactの状態を更新する
+
+---
+
+## Step 5: 初回表示時に読み込む
+
+```tsx
+useEffect(() => {
+  void loadMessages().catch((e) => {
+    setError(e instanceof Error ? e.message : '読み込みに失敗しました')
+  })
+}, [])
+```
+
+この `useEffect` は、画面の初回表示後に一覧を取得するために使っています。
+
+`useEffect = API通信専用` ではありません。「レンダーとは別に外部へ影響する処理を行う仕組み」と考えてください。
+
+---
+
+## Step 6: 一覧を描画する
+
+```tsx
+<ul>
+  {messages.map((message) => (
+    <li key={message.id}>
+      <p>{message.content}</p>
+      <small>{message.createdAt}</small>
+    </li>
+  ))}
+</ul>
+```
+
+配列の各要素をJSXへ変換しています。
+
+---
+
+## Step 7: 投稿フォームを作る
+
+```tsx
+<form onSubmit={handleSubmit}>
+  <input
+    value={input}
+    onChange={(e) => setInput(e.target.value)}
+    maxLength={140}
+  />
+  <button type="submit">投稿</button>
+</form>
+```
+
+`value` と `onChange` を使い、入力欄の値をReactのStateで管理します。
+
+---
+
+## Step 8: POSTする
+
+```tsx
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setError('')
+
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: input }),
+  })
+
+  if (!res.ok) {
+    setError(`投稿に失敗しました: ${res.status}`)
+    return
+  }
+
+  setInput('')
+  await loadMessages()
+}
+```
+
+投稿成功後に一覧を再取得するため、画面にも新しい投稿が反映されます。
+
+---
+
+## Step 9: エラー表示を付ける
+
+```tsx
+{error && <p role="alert">{error}</p>}
+```
+
+エラーを `console.log` だけで終わらせず、利用者にも分かる形にします。
+
+---
+
+## Step 10: DevToolsで通信を見る
+
+1件投稿し、NetworkタブでPOSTを選択します。
+
+確認するもの:
+
+- Request URL
+- Method
+- Status
+- Payload
+- Response
+
+次に、空文字など不正な値を送るようコードを一時的に変更し、400になることも確認します。
+
+---
+
+## 完成チェック
+
+- [ ] 初回表示で投稿一覧が出る
+- [ ] フォームから投稿できる
+- [ ] 投稿後に入力欄が空になる
+- [ ] 投稿後に一覧が更新される
+- [ ] API失敗時に画面へエラーが出る
+- [ ] NetworkタブでPOSTのpayloadとstatusを確認できる
+- [ ] `useState` と `useEffect` の役割を説明できる
+
+## 今日の一言説明
+
+> ボタンを押してから、新しい投稿が画面に出るまで何が起きている？
+
+次の順番を追えればOKです。
+
+```text
+form → React → POST → Hono → JSON → GET → setMessages → 再レンダー
+```
+
+---
+
+次: [第5回 Hono RPC で型安全につなぐ](session-05.md)
+
+公式資料:
+- https://react.dev/learn
+- https://developers.cloudflare.com/workers/framework-guides/web-apps/react/

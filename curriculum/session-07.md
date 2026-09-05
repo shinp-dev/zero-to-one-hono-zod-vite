@@ -1,95 +1,258 @@
-# 第7回：実践アプリ構築とデプロイ
+# 第7回: 公開・デバッグ・振り返り
 
-## 1. 今日の目標
-- これまでの知識を統合して「一言掲示板」を完成させる
-- Cloudflare にデプロイしてインターネットに公開する
-- ブラウザの DevTools を使ったデバッグ方法を知る
+## 今日のゴール
 
-## 2. 最終課題：一言掲示板
-テンプレート（雛形）を配布します。以下の **TODO コメント** の部分を自分で実装してください。
+- 本番D1へテーブルを作る
+- React + Hono + D1 を1つのCloudflare Workerとして公開する
+- DevToolsで本番通信を確認する
+- 「動く」と「安全に運用できる」の違いを考える
 
-### 必要な機能
-- **投稿フォーム**: テキストを入力して送信できる
-- **バリデーション**: 空文字と140文字超を弾く（Zodで実装済み）
-- **一覧表示**: 投稿を新しい順に表示する
-- **削除**: 各投稿に削除ボタンを付ける（余裕があれば）
+最終回です。ここでは新しい大機能を増やすより、**公開・確認・説明できる状態にすること**を重視します。
 
-### バックエンド（穴埋め箇所）
-```typescript
-// TODO 1: GET /messages - メッセージ一覧を返す
-// TODO 2: POST /messages - メッセージを保存する
-// TODO 3: DELETE /messages/:id - メッセージを削除する
+---
+
+## 最終構成
+
+```text
+Browser
+  |
+  | https://xxxx.workers.dev
+  v
+Cloudflare Worker
+  ├─ React SPA (Static Assets)
+  └─ Hono API (/api/*)
+         |
+         | DB Binding
+         v
+        D1
 ```
 
-### フロントエンド（穴埋め箇所）
-```tsx
-// TODO 4: useEffect で API からメッセージ一覧を取得する
-// TODO 5: フォーム送信時に POST リクエストを送る
-// TODO 6: 送信後にメッセージ一覧を再取得する
-```
+Cloudflare Vite pluginを使う構成では、フロントの静的ファイルとWorkerコードを同じデプロイ単位として扱えます。
 
-## 3. DevTools の使い方
-ブラウザの開発者ツール（F12）は、デバッグの最強の味方です。
+---
 
-### Console タブ
-- `console.log()` の出力を確認できる
-- エラーメッセージが赤字で表示される
+## Step 1: ローカルで最終確認する
 
-### Network タブ
-- ブラウザがどんなリクエストを送っているか一覧で見える
-- リクエストをクリックすると、送信データ・レスポンスの中身を確認できる
-- **Status が 400 や 500** → サーバー側でエラーが起きている
-
-### よくあるエラーと対処法
-| エラー | 原因 | 対策 |
-|---|---|---|
-| `CORS error` | バックエンドに `cors()` がない | `app.use('*', cors())` を追加 |
-| `404 Not Found` | URLが間違っている | パスを見直す |
-| `400 Bad Request` | バリデーションエラー | 送信データの形を確認 |
-| `500 Server Error` | サーバー側のバグ | ターミナルのエラーログを読む |
-
-## 4. デプロイ（世界に公開）
-### Cloudflare にログイン
 ```bash
-npx wrangler login
+npm run dev
 ```
 
-### バックエンドのデプロイ
+最低限、次を試します。
+
+- 一覧表示
+- 正常な投稿
+- 空文字投稿
+- 140文字
+- 141文字
+- ページ再読み込み
+- 開発サーバー再起動後のデータ
+
+### Networkタブも確認
+
+POSTを1件選び、次を見ます。
+
+```text
+Request URL
+Request Method
+Status Code
+Request Payload
+Response
+```
+
+---
+
+## Step 2: ビルドを通す
+
 ```bash
-# backend ディレクトリで
+npm run build
+```
+
+開発サーバーで動いていても、TypeScriptや本番ビルドでエラーになることがあります。
+
+ここで失敗したら、デプロイへ進まず直します。
+
+---
+
+## Step 3: 本番D1へテーブルを作る
+
+第6回で作ったのはローカルDBです。本番側にもテーブルが必要です。
+
+```bash
+npx wrangler d1 execute message-board-db --remote --file=./schema.sql
+```
+
+### 確認
+
+```bash
+npx wrangler d1 execute message-board-db --remote --command="SELECT name FROM sqlite_master WHERE type='table';"
+```
+
+`messages` テーブルが存在することを確認します。
+
+---
+
+## Step 4: デプロイする
+
+テンプレートの `package.json` に用意されているデプロイスクリプトを使います。
+
+```bash
 npm run deploy
 ```
-表示された URL（例: `https://my-app.xxx.workers.dev`）がバックエンドのアドレスです。
 
-### フロントエンドのデプロイ
-```bash
-# frontend ディレクトリで
-npm run build
-npx wrangler pages deploy dist
+表示された `*.workers.dev` URLを開きます。
+
+この構成では、React画面とHono APIを別々にPagesへデプロイする必要はありません。
+
+---
+
+## Step 5: 本番で投稿する
+
+本番URLで次を確認します。
+
+- 画面が表示される
+- 投稿できる
+- 再読み込みしても残る
+- `/api/messages` がJSONを返す
+
+ローカルにあった投稿が本番に無いのは正常です。
+
+```text
+local D1  !=  remote D1
 ```
 
-### 本番用の URL に差し替え
-フロントエンドのコード内で `http://localhost:8787` を、デプロイ後のURLに差し替えてください。
+---
 
-## 5. 発表
-- 公開URLをクラスメートに共有しましょう
-- お互いのアプリを触って、投稿してみましょう
+## Step 6: 本番のNetworkを読む
 
-## 6. 振り返り
-このカリキュラムで学んだことを振り返ります：
+本番環境で1件投稿し、Networkタブを見ます。
 
-| 回 | 学んだこと |
+### 説明できるようにする
+
+```text
+POST /api/messages
+  ↓
+Zod validation
+  ↓
+D1 INSERT
+  ↓
+201
+  ↓
+ReactがGETし直す
+  ↓
+画面更新
+```
+
+コードを見ずにこの流れを説明してみてください。
+
+---
+
+## Step 7: わざと失敗させる
+
+### 例1: URLを一時的に間違える
+
+存在しないAPIへアクセスして404を確認します。
+
+### 例2: 不正入力
+
+141文字を送って400を確認します。
+
+### 例3: サーバーエラーを読む
+
+授業環境で安全に試せる場合のみ、一時的にhandler内で例外を発生させ、500時に何を見るか確認します。確認後は必ず元へ戻してください。
+
+### 切り分け
+
+| 状況 | 最初に見る場所 |
 |---|---|
-| 第1回 | JavaScript 復習 + TypeScript の型 |
-| 第2回 | Hono でのサーバー構築 |
-| 第3回 | Zod によるバリデーション |
-| 第4回 | React でのUI構築 |
-| 第5回 | RPC による型安全な通信 |
-| 第6回 | D1 データベース操作 |
-| 第7回 | 統合 + デプロイ |
+| ボタンを押しても反応しない | Console |
+| APIが失敗している | Network |
+| Worker処理が落ちる | ターミナル / Workers Logs |
+| 404 | URLとHono route |
+| 400 | request bodyとZod |
+| 500 | Worker側の例外・DB処理 |
 
-## 7. 次のステップ
-- **認証**: Cloudflare Access や Lucia Auth でログイン機能を追加
-- **画像保存**: Cloudflare R2 でファイルアップロード
-- **リアルタイム通信**: Durable Objects / WebSocket でチャット機能
-- **モノレポ構成**: 特別回の資料を参照し、プロジェクトを整理
+---
+
+## Step 8: セキュリティ上の穴を考える
+
+今の掲示板は学習用です。
+
+例えば削除APIを次のように足したとします。
+
+```text
+DELETE /api/messages/:id
+```
+
+認証も認可も無ければ、URLを知っている人は他人の投稿まで消せるかもしれません。
+
+ここで3つを分けます。
+
+```text
+バリデーション → 入力の形は正しいか
+認証           → あなたは誰か
+認可           → あなたがそれをしてよいか
+```
+
+Zodを入れたから安全、TypeScriptだから安全、という話ではありません。
+
+---
+
+## Step 9: 最終説明テスト
+
+次の質問にコードを見ず答えてみます。
+
+1. ReactはD1へ直接アクセスしていますか？
+2. Zodはフロントとバックのどちらで必須ですか？
+3. Hono RPCがあっても `res.ok` を確認するのはなぜですか？
+4. `DB` Bindingは何をつないでいますか？
+5. local D1とremote D1は同じデータですか？
+6. 400と500は何が違いますか？
+7. 誰でも削除できるAPIを防ぐには何が必要ですか？
+
+---
+
+## 完成チェック
+
+- [ ] `npm run build` が成功する
+- [ ] 本番D1にschemaを適用した
+- [ ] `npm run deploy` が成功する
+- [ ] 公開URLで一覧と投稿が動く
+- [ ] NetworkタブでPOSTのrequest/responseを確認した
+- [ ] 400 / 404 / 500 の違いを説明できる
+- [ ] React → Hono → Zod → D1 → React の経路を説明できる
+- [ ] バリデーション / 認証 / 認可の違いを説明できる
+
+## 最終振り返り
+
+この授業の目的は、HonoやReactのAPIを暗記することではありません。
+
+完成時に次の地図が頭にあれば成功です。
+
+```text
+UI
+ ↓
+HTTP
+ ↓
+API route
+ ↓
+Validation
+ ↓
+Business logic
+ ↓
+Database
+ ↓
+Response
+ ↓
+UI
+```
+
+ライブラリが変わっても、この境界の考え方は多くのWebアプリで使えます。
+
+---
+
+次: [発展回 認証・認可・テスト・設計](session-extra.md)
+
+公式資料:
+- https://developers.cloudflare.com/workers/static-assets/
+- https://developers.cloudflare.com/workers/vite-plugin/
+- https://developers.cloudflare.com/d1/wrangler-commands/

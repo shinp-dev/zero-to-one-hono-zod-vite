@@ -1,113 +1,176 @@
-# 第1回：モダンJS復習とTypeScript入門
+# 第1回: プロジェクトを動かす + TypeScript
 
-## 1. 今日の目標
-- JavaScript の現代的な書き方を復習する
-- TypeScript の「型」の考え方を理解する
-- 開発環境（Node.js / VS Code）を整える
+## 今日のゴール
 
-## 2. JavaScript の「これだけは」復習
+- Hono + React + Vite + Cloudflare Workers の雛形をローカルで動かす
+- 「フロントエンド」と「Worker」の場所を確認する
+- TypeScript の型エラーを1つ自分で読んで直す
 
-### アロー関数
-```javascript
-// 従来の書き方
-function greet(name) {
-  return 'Hello ' + name;
-}
+この回ではまだ掲示板を完成させません。**開発環境が動き、コードを変更して結果を確認できる状態**を作ることが目的です。
 
-// アロー関数（モダンな書き方）
-const greet = (name) => {
-  return 'Hello ' + name;
-};
+---
 
-// 1行で書ける場合は return も省略できる
-const greet = (name) => 'Hello ' + name;
-```
+## Step 1: プロジェクトを作る
 
-### テンプレートリテラル
-バッククォート（`` ` ``）で囲むと、文字列の中に変数を埋め込めます。
-```javascript
-const name = 'Taro';
-const message = `Hello ${name}!`; // "Hello Taro!"
-```
+Cloudflare公式の Hono + React + Vite テンプレートを使います。
 
-### 非同期処理 (async/await)
-サーバーとの通信など「時間がかかる処理」を待つ仕組みです。
-```javascript
-const fetchData = async () => {
-  const res = await fetch('https://api.example.com/data');
-  const data = await res.json();
-  console.log(data);
-};
-```
-
-### 分割代入
-オブジェクトや配列から必要な値だけを取り出します。
-```javascript
-const user = { name: 'Taro', age: 20, email: 'taro@example.com' };
-const { name, age } = user; // name='Taro', age=20
-```
-
-## 3. TypeScript とは？
-TypeScript は **JavaScript に「型」を追加した言語** です。ブラウザは直接読めないので、ビルド時に JavaScript に変換されます。
-
-### なぜ型が必要か？
-```javascript
-// JavaScript: 実行するまでバグに気づかない
-function add(a, b) {
-  return a + b;
-}
-add('1', 2); // "12" ← バグ！文字列結合になってしまう
-```
-
-```typescript
-// TypeScript: 書いた瞬間にエディタが教えてくれる
-function add(a: number, b: number): number {
-  return a + b;
-}
-add('1', 2); // ← ここで赤波線が出る！
-```
-
-### 基本の型
-```typescript
-const name: string = 'Taro';     // 文字列
-const age: number = 20;           // 数値
-const isStudent: boolean = true;  // 真偽値
-const hobbies: string[] = ['読書', 'ゲーム']; // 配列
-```
-
-### 型推論（省略できるケース）
-TypeScript は賢いので、明らかな場合は型を書かなくても推測してくれます。
-```typescript
-const name = 'Taro';  // string と自動で推論される
-const age = 20;        // number と自動で推論される
-```
-
-### オブジェクトの型（type / interface）
-```typescript
-type User = {
-  name: string;
-  age: number;
-  email: string;
-};
-
-const user: User = {
-  name: 'Taro',
-  age: 20,
-  email: 'taro@example.com'
-};
-```
-
-## 4. 開発環境の確認
 ```bash
-node -v   # v20以上が表示されればOK
-npm -v    # バージョンが表示されればOK
+npm create cloudflare@latest -- message-board --template=cloudflare/templates/vite-react-template
 ```
 
-VS Code に以下の拡張機能を入れておきましょう：
-- **ESLint**: コードの問題を自動検出
-- **Prettier**: コードを自動整形
+CLIの質問文はバージョンで変わることがあります。途中でデプロイするか聞かれた場合、この回ではローカル開発だけなので **No** で構いません。
 
-## 5. まとめ
-- アロー関数、`async/await`、分割代入は今後のコードで常に使う。
-- TypeScript は「型」でバグを事前に防ぐ仕組み。
-- 型注釈（`: string` など）を書くことで、エディタの補完が強力になる。
+作成できたら移動します。
+
+```bash
+cd message-board
+```
+
+---
+
+## Step 2: 起動する
+
+```bash
+npm run dev
+```
+
+ターミナルに表示されたローカルURLをブラウザで開きます。
+
+### 確認
+
+- ブラウザにReact画面が表示される
+- ターミナルに致命的なエラーが出ていない
+- ファイルを変更すると画面へ反映される
+
+ここまで動かなければ、先へ進まずにエラーを読みます。
+
+---
+
+## Step 3: プロジェクトの地図を見る
+
+生成される構成はバージョンによって少し変わりますが、概ね次の役割があります。
+
+```text
+message-board/
+├─ src/
+│  ├─ worker/        ← Hono / API
+│  └─ react-app/     ← React / 画面
+├─ index.html
+├─ vite.config.ts
+├─ wrangler.jsonc    ← Cloudflare設定
+└─ package.json
+```
+
+### ここで覚えること
+
+- **React**: ブラウザに見える画面を作る
+- **Hono**: `/api/...` のリクエストを処理する
+- **Vite**: 開発サーバーとビルドを担当する
+- **Wrangler**: Cloudflare Workers の設定・デプロイを担当する
+
+全部を今覚える必要はありません。まず「どのファイルが何側なのか」を区別できれば十分です。
+
+---
+
+## Step 4: TypeScript の型を作る
+
+掲示板で扱う1件の投稿を型で表します。
+
+練習用の `.ts` ファイル、またはReact側のファイル内に次を書いてみます。
+
+```ts
+type Message = {
+  id: number
+  content: string
+  createdAt: string
+}
+
+const sample: Message = {
+  id: 1,
+  content: '最初の投稿',
+  createdAt: new Date().toISOString(),
+}
+```
+
+`Message` は「投稿データはこの形である」という約束です。
+
+---
+
+## Step 5: わざと壊す
+
+`id` を文字列にしてみます。
+
+```ts
+const broken: Message = {
+  id: '1',
+  content: '型エラーになる',
+  createdAt: new Date().toISOString(),
+}
+```
+
+エディタに型エラーが出ることを確認してください。
+
+### 考える
+
+なぜブラウザで実行する前に間違いが見つかったのでしょうか。
+
+TypeScript は実行前の型チェックによって、**コードを書いている段階で矛盾を見つける**ためです。
+
+---
+
+## Step 6: 型推論を見る
+
+次の2つを比べます。
+
+```ts
+const name: string = 'Taro'
+const age = 20
+```
+
+`age` には `: number` と書いていませんが、TypeScript は値から `number` と推論できます。
+
+### ポイント
+
+型は何でも手書きすればよいわけではありません。
+
+- 型が明らか → 推論に任せる
+- データ構造や関数の境界 → 型を明示すると読みやすい
+
+---
+
+## Step 7: エラーの場所を読む
+
+今後エラーが出たら、最初に次を確認します。
+
+```text
+1. 何というエラーか
+2. どのファイルか
+3. 何行目か
+4. 自分が直前に何を変えたか
+```
+
+エラーメッセージを全部理解する必要はありません。まず**場所と原因候補を狭める**ことが重要です。
+
+---
+
+## 完成チェック
+
+- [ ] `npm run dev` でアプリを起動できる
+- [ ] React側とWorker側のファイルを指せる
+- [ ] `wrangler.jsonc` がCloudflare設定だと説明できる
+- [ ] `Message` 型を作れる
+- [ ] わざと型エラーを出し、エディタ上で場所を確認できる
+
+## 今日の一言説明
+
+次を30秒で説明してみてください。
+
+> JavaScript と TypeScript は何が違う？
+
+模範解答を暗記する必要はありません。「実行前に型の矛盾を検出できる」が入っていれば十分です。
+
+---
+
+次: [第2回 Hono で最初の API](session-02.md)
+
+公式資料: https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/

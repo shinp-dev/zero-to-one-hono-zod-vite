@@ -1,112 +1,226 @@
-# 第5回：Hono RPC によるフロントエンド連携
+# 第5回: Hono RPC で型安全につなぐ
 
-## 1. 今日の目標
-- フロントエンド（React）からバックエンド（Hono）にデータを送受信する
-- Hono の RPC 機能で **型安全な通信** を実現する
+## 今日のゴール
 
-## 2. 従来の通信方法の問題点
-普通に `fetch` で API を呼ぶと、こうなります：
-```typescript
-// URLは文字列 → タイポしてもエディタが教えてくれない
-const res = await fetch('http://localhost:8787/api/users')
-const data = await res.json()
-// data の型が any → 何が入っているか分からない
+- Honoの `AppType` をフロントエンドから利用する
+- `fetch('/api/...')` の文字列ベタ書きをHono Clientへ置き換える
+- 入力とレスポンスに型補完が効くことを確認する
+- 「型安全でも実行時エラーは残る」ことを理解する
+
+前回はReactから普通の `fetch()` でAPIを呼びました。今回は、Hono RPCでフロントとバックの型をつなぎます。
+
+---
+
+## 前回までの問題
+
+```tsx
+const res = await fetch('/api/messages')
+const data = (await res.json()) as { messages: Message[] }
 ```
 
-**RPC を使えば、これらの問題がすべて解消されます。**
+この書き方には、人間が合わせている部分があります。
 
-## 3. RPC (Remote Procedure Call) とは？
-「リモートの関数を呼ぶ」仕組みです。API の URL を文字列で書く代わりに、**バックエンドの関数をそのまま呼ぶような感覚** でコードが書けます。
+- URL文字列
+- HTTP method
+- request bodyの形
+- response bodyの型
 
-```typescript
-// 従来: URL を直接指定 → タイポのリスク
-const res = await fetch('/api/hello', { method: 'POST', body: ... })
+バックエンドを変更しても、フロント側の手書き型は自動では変わりません。
 
-// RPC: エディタの補完が効く → タイポ不可能
-const res = await client.hello.$post({ json: { name: '学生' } })
-```
+---
 
-## 4. バックエンド側の準備
-Hono アプリの「型」をエクスポートします。
+## Step 1: Hono側で型を公開する
 
-```typescript
-// backend/src/index.ts
-import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
-import { z } from 'zod'
+Worker側で、ルート定義を変数として受けます。
 
-const app = new Hono()
+例:
 
-const route = app.post(
-  '/hello',
-  zValidator('json', z.object({ name: z.string() })),
-  (c) => {
-    const { name } = c.req.valid('json')
-    return c.json({ message: `こんにちは、${name}さん！` })
-  }
-)
+```ts
+const route = app
+  .get('/api/messages', (c) => {
+    return c.json({ messages })
+  })
+  .post(
+    '/api/messages',
+    zValidator('json', createMessageSchema),
+    (c) => {
+      const input = c.req.valid('json')
 
-// ★ この1行が重要！フロントエンドに型情報を渡す
+      const message = {
+        id: messages.length + 1,
+        content: input.content,
+        createdAt: new Date().toISOString(),
+      }
+
+      messages.unshift(message)
+      return c.json({ message }, 201)
+    },
+  )
+
 export type AppType = typeof route
 export default app
 ```
 
-## 5. フロントエンド側の実装
-```bash
-# フロントエンドのプロジェクトで Hono クライアントをインストール
-cd my-frontend
-npm install hono
-```
+重要なのは実装コードをフロントへコピーすることではなく、**型情報をTypeScriptに渡すこと**です。
+
+---
+
+## Step 2: `strict` を確認する
+
+Hono RPCの型推論を正しく使うため、TypeScript設定で `strict: true` を確認します。
+
+テンプレートによって `tsconfig` が複数に分かれている場合があります。React側とWorker側の両方がstrict設定の対象になっているか確認してください。
+
+---
+
+## Step 3: Hono Clientを作る
+
+React側でHono Clientを使います。
 
 ```tsx
-// frontend/src/App.tsx
-import { useState } from 'react'
 import { hc } from 'hono/client'
-import type { AppType } from '../../backend/src/index' // 型だけ借りる
+import type { AppType } from '../../worker'
 
-const client = hc<AppType>('http://localhost:8787')
+const client = hc<AppType>(window.location.origin)
+```
 
-function App() {
-  const [name, setName] = useState('')
-  const [response, setResponse] = useState('')
+相対パスはテンプレートのファイル配置に応じて調整してください。
 
-  const handleSubmit = async () => {
-    // ↓ ここで補完が効く！ .hello も .$post も候補に出る
-    const res = await client.hello.$post({ json: { name } })
-    const data = await res.json()
-    setResponse(data.message) // ← data.message も型が効いている
-  }
+`import type` なので、ここで欲しいのはWorkerの実行コードではなく型情報です。
 
-  return (
-    <div>
-      <input value={name} onChange={(e) => setName(e.target.value)} />
-      <button onClick={handleSubmit}>送信</button>
-      <p>{response}</p>
-    </div>
-  )
+---
+
+## Step 4: GETをRPCへ置き換える
+
+これまで:
+
+```tsx
+const res = await fetch('/api/messages')
+```
+
+変更後:
+
+```tsx
+const res = await client.api.messages.$get()
+```
+
+続けて:
+
+```tsx
+if (!res.ok) {
+  throw new Error(`一覧取得に失敗しました: ${res.status}`)
 }
 
-export default App
+const data = await res.json()
+setMessages(data.messages)
 ```
 
-## 6. CORS 設定
-フロントエンド（port 5173）とバックエンド（port 8787）はポートが異なるため、バックエンド側で CORS を許可する必要があります。
+`data.messages` の型補完が効くことを確認します。
 
-```typescript
-// backend/src/index.ts
-import { cors } from 'hono/cors'
+---
 
-const app = new Hono()
-app.use('*', cors()) // すべてのオリジンを許可（開発時のみ）
+## Step 5: POSTもRPCへ置き換える
+
+```tsx
+const res = await client.api.messages.$post({
+  json: { content: input },
+})
 ```
 
-## 7. ハンズオン
-1. バックエンド: `/hello` エンドポイントを実装する
-2. フロントエンド: 入力フォームから名前を送信し、レスポンスを画面に表示する
-3. **補完が効くこと** を確認する（`client.` の後に Ctrl+Space を押してみる）
+エディタで `json:` の中にカーソルを置き、補完を確認してください。
 
-## 8. まとめ
-- `export type AppType = typeof route` でバックエンドの型をエクスポート。
-- `hc<AppType>(url)` でフロントエンドから型安全にAPIを呼べる。
-- URL のタイプミスやレスポンスの型間違いが **コンパイル時に** 検出される。
-- 開発時は `cors()` ミドルウェアを入れないとブラウザがリクエストをブロックする。
+### わざと壊す
+
+```tsx
+const res = await client.api.messages.$post({
+  json: { contents: input },
+})
+```
+
+`contents` はサーバーのZodスキーマと一致しないため、型エラーになるはずです。
+
+---
+
+## Step 6: URLのタイポも試す
+
+普通のfetchなら、次は実行するまで気付きにくいです。
+
+```tsx
+fetch('/api/mesages')
+```
+
+Hono Clientでは、定義されているルートをもとにプロパティが生成されるため、存在しないルートを補完から選ぶことはできません。
+
+ただし「絶対に失敗しない」という意味ではありません。
+
+---
+
+## Step 7: 型安全が守らないもの
+
+Hono RPCが助けてくれるのは主に**開発時のAPI契約**です。
+
+次のような問題は実行時に起こり得ます。
+
+- ネットワーク障害
+- D1障害
+- サーバー側の例外
+- 401 / 403
+- 500
+- デプロイしたフロントとバックのバージョン不一致
+
+そのため、次は残します。
+
+```tsx
+if (!res.ok) {
+  // 利用者へエラー表示
+}
+```
+
+「型安全だからエラー処理不要」ではありません。
+
+---
+
+## Step 8: CORSはどこへ行った？
+
+この教材ではReactとHonoを同じWorker / Originにまとめています。
+
+```text
+https://example.workers.dev/
+https://example.workers.dev/api/messages
+```
+
+そのため、基本構成ではCORS許可を追加する必要がありません。
+
+もし将来、
+
+```text
+Frontend: https://app.example.com
+API:      https://api.example.com
+```
+
+のように別Originへ分けた場合は、そこでCORS設計が必要になります。
+
+---
+
+## 完成チェック
+
+- [ ] `AppType` をWorker側からexportした
+- [ ] Hono Clientを作った
+- [ ] GETを `$get()` に置き換えた
+- [ ] POSTを `$post()` に置き換えた
+- [ ] request bodyのタイポを型エラーとして確認した
+- [ ] responseの型補完を確認した
+- [ ] `res.ok` の実行時チェックを残した
+- [ ] 同一Originなので基本CORS不要だと説明できる
+
+## 今日の一言説明
+
+> Hono RPCを使うと何が嬉しい？
+
+「バックエンドのAPI定義から、フロント側のURL・入力・出力へ型をつなげられる」が説明できればOKです。
+
+---
+
+次: [第6回 D1 に永続化する](session-06.md)
+
+公式資料: https://hono.dev/docs/guides/rpc
