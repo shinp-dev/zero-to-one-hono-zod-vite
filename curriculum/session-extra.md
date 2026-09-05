@@ -177,7 +177,7 @@ const API_KEY = 'secret-value'
 公開してよい設定と秘密情報を分けます。
 
 ```text
-公開設定     → wrangler.jsonc の vars など
+公開設定     → Wrangler設定ファイル（wrangler.json / wrangler.jsonc）の vars など
 秘密情報     → Secrets
 DB/R2など    → Bindings
 ```

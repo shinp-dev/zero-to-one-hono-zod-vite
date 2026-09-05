@@ -34,7 +34,7 @@ cd message-board
 npm run dev
 ```
 
-ターミナルに表示されたローカルURLをブラウザで開きます。
+ターミナルに表示されたローカルURLをブラウザで開きます。現行テンプレートでは通常 `http://localhost:5173` です。
 
 ### 確認
 
@@ -48,18 +48,23 @@ npm run dev
 
 ## Step 3: プロジェクトの地図を見る
 
-生成される構成はバージョンによって少し変わりますが、概ね次の役割があります。
+2026年9月時点の公式テンプレートは概ね次の構成です。
 
 ```text
 message-board/
 ├─ src/
-│  ├─ worker/        ← Hono / API
-│  └─ react-app/     ← React / 画面
+│  ├─ worker/
+│  │  └─ index.ts        ← Hono / API
+│  └─ react-app/
+│     └─ App.tsx         ← React / 画面
 ├─ index.html
 ├─ vite.config.ts
-├─ wrangler.jsonc    ← Cloudflare設定
+├─ wrangler.json         ← Cloudflare設定
+├─ worker-configuration.d.ts
 └─ package.json
 ```
+
+Cloudflareの別テンプレートや将来の版では `wrangler.jsonc` の場合もあります。**拡張子を暗記するのではなく、Wranglerの設定ファイルを見つける**ことが大事です。
 
 ### ここで覚えること
 
@@ -76,7 +81,7 @@ message-board/
 
 掲示板で扱う1件の投稿を型で表します。
 
-練習用の `.ts` ファイル、またはReact側のファイル内に次を書いてみます。
+練習用に次を書いてみます。
 
 ```ts
 type Message = {
@@ -90,6 +95,8 @@ const sample: Message = {
   content: '最初の投稿',
   createdAt: new Date().toISOString(),
 }
+
+console.log(sample)
 ```
 
 `Message` は「投稿データはこの形である」という約束です。
@@ -98,10 +105,10 @@ const sample: Message = {
 
 ## Step 5: わざと壊す
 
-`id` を文字列にしてみます。
+`id` を一時的に文字列へ変えてみます。
 
 ```ts
-const broken: Message = {
+const sample: Message = {
   id: '1',
   content: '型エラーになる',
   createdAt: new Date().toISOString(),
@@ -109,6 +116,8 @@ const broken: Message = {
 ```
 
 エディタに型エラーが出ることを確認してください。
+
+確認できたら、`id: 1` に戻します。**わざと壊したコードを残さない**ところまでが練習です。
 
 ### 考える
 
@@ -136,6 +145,8 @@ const age = 20
 - 型が明らか → 推論に任せる
 - データ構造や関数の境界 → 型を明示すると読みやすい
 
+練習コードは確認後に消して構いません。第2回では実際のAPIデータとして `Message` 型を使います。
+
 ---
 
 ## Step 7: エラーの場所を読む
@@ -156,10 +167,11 @@ const age = 20
 ## 完成チェック
 
 - [ ] `npm run dev` でアプリを起動できる
-- [ ] React側とWorker側のファイルを指せる
-- [ ] `wrangler.jsonc` がCloudflare設定だと説明できる
+- [ ] `src/react-app/App.tsx` と `src/worker/index.ts` を指せる
+- [ ] Wrangler設定ファイルの役割を説明できる
 - [ ] `Message` 型を作れる
-- [ ] わざと型エラーを出し、エディタ上で場所を確認できる
+- [ ] わざと型エラーを出し、エディタ上で場所を確認した
+- [ ] わざと入れた型エラーを元に戻した
 
 ## 今日の一言説明
 
@@ -173,4 +185,6 @@ const age = 20
 
 次: [第2回 Hono で最初の API](session-02.md)
 
-公式資料: https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/
+公式資料:
+- https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/
+- https://github.com/cloudflare/templates/tree/main/vite-react-template

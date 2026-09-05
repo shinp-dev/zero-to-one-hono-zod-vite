@@ -57,7 +57,7 @@ const createMessageSchema = z.object({
 })
 ```
 
-この1行には次のルールがあります。
+この1つのスキーマに次のルールがあります。
 
 - 文字列である
 - 前後の空白を除く
@@ -66,18 +66,28 @@ const createMessageSchema = z.object({
 
 ---
 
-## Step 3: TypeScriptの型も取り出す
+## Step 3: ZodとTypeScriptがつながることを見る
+
+ZodスキーマからTypeScriptの型を取り出すこともできます。
 
 ```ts
 type CreateMessage = z.infer<typeof createMessageSchema>
 ```
 
-ZodスキーマからTypeScriptの型を作れます。
+これは次のような型になります。
+
+```ts
+type CreateMessage = {
+  content: string
+}
+```
+
+この教材の実装では後続コードが `c.req.valid('json')` から型推論されるため、**使わない `CreateMessage` 型を実ファイルへ残す必要はありません**。ここでは `z.infer` の意味を確認する例として見てください。
 
 ```text
 Zod schema
   ├─ 実行時: 入力チェック
-  └─ 開発時: TypeScriptの型
+  └─ 開発時: TypeScriptの型推論にも利用できる
 ```
 
 ただし、ここで重要なのは **TypeScriptだけでは外部から届くJSONを信用できない** ことです。
@@ -219,6 +229,7 @@ messagesは増えない
 - [ ] 数値の `content` を400にできる
 - [ ] 不正入力後に投稿数が増えていない
 - [ ] TypeScriptとZodの役割の違いを説明できる
+- [ ] `z.infer` が「Zodスキーマから型を得る」仕組みだと説明できる
 
 ## 今日の一言説明
 

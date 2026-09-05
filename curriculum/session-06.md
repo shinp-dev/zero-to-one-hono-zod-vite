@@ -46,29 +46,31 @@ npx wrangler login
 
 ---
 
-## Step 2: D1データベースを作る
+## Step 2: D1データベースを作ってBindingする
+
+2026年9月時点のWranglerでは、DB作成とWorker設定へのBinding追加をまとめて行えます。
 
 ```bash
-npx wrangler d1 create message-board-db
+npx wrangler d1 create message-board-db --binding DB --update-config
 ```
 
-Wranglerがデータベースを作成し、Binding用の設定を表示します。
+実行後、Wrangler設定ファイルを開きます。現行の公式Vite Reactテンプレートでは `wrangler.json` です。
 
-`wrangler.jsonc` の `d1_databases` に、表示された `database_id` を含む設定を追加します。
+次のような `d1_databases` 設定が追加されていることを確認します。
 
-例:
-
-```jsonc
+```json
 {
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "message-board-db",
-      "database_id": "実際に表示されたID"
+      "database_id": "実際に作成されたID"
     }
   ]
 }
 ```
+
+別テンプレートなどで `wrangler.jsonc` を使っていても考え方は同じです。
 
 `binding: "DB"` は、Workerコードから `c.env.DB` として参照するための名前です。
 
@@ -76,27 +78,31 @@ Wranglerがデータベースを作成し、Binding用の設定を表示しま�
 
 ## Step 3: Bindingの型を更新する
 
-CloudflareはWorker設定から型を生成できます。
+Cloudflare設定からWorker用のTypeScript型を再生成します。
 
 ```bash
-npx wrangler types
+npm run cf-typegen
 ```
 
-生成された `worker-configuration.d.ts` などの型定義を開き、D1 Bindingが含まれていることを確認します。
+現行テンプレートでは `wrangler types` が実行され、`worker-configuration.d.ts` が更新されます。
 
-テンプレートやWranglerのバージョンによって生成される型名は変わることがあるため、画面の名前を丸暗記しないでください。
+Workerはすでに次のように `Env` 型を使っています。
 
-重要なのは次です。
+```ts
+const app = new Hono<{ Bindings: Env }>()
+```
+
+型生成後、`Env` に `DB: D1Database` 相当のBindingが追加されていることを確認します。
 
 ```text
-wrangler.jsonc に DB Bindingを書く
+Wrangler設定にDBを書く
   ↓
-wrangler types
+npm run cf-typegen
   ↓
-TypeScriptからDBの型が見える
+TypeScriptから c.env.DB が見える
 ```
 
-設定を変えたら、型も再生成します。
+Bindingを変更したら型も再生成する、という流れを覚えてください。
 
 ---
 
@@ -130,15 +136,13 @@ Zodだけでなく、DBにも最低限の制約を持たせます。
 npx wrangler d1 execute message-board-db --local --file=./schema.sql
 ```
 
-`--local` が重要です。この時点では自分の開発環境用DBへSQLを実行しています。
+`--local` が重要です。この時点では自分の開発環境用D1へSQLを実行しています。
 
 ---
 
 ## Step 6: GETをD1へ置き換える
 
 メモリ配列を読む処理を削除し、D1から取得します。
-
-例:
 
 ```ts
 type MessageRow = {
@@ -223,9 +227,7 @@ API仕様を変えたら、**壊れた場所をTypeScriptに探してもらう**
 3. 再び `npm run dev`
 4. 一覧を開く
 
-投稿が残っていることを確認します。
-
-Wranglerの現在のローカルD1開発環境では、通常ローカルデータは開発実行間で保持されます。
+ローカルD1に投稿が残っていることを確認します。
 
 ---
 
@@ -245,8 +247,9 @@ Wranglerの現在のローカルD1開発環境では、通常ローカルデー�
 ## 完成チェック
 
 - [ ] D1を作成した
-- [ ] `wrangler.jsonc` にDB Bindingを設定した
-- [ ] `wrangler types` を実行した
+- [ ] Wrangler設定に `DB` Bindingが追加された
+- [ ] `npm run cf-typegen` を実行した
+- [ ] `c.env.DB` に型補完が効く
 - [ ] ローカルDBへ `schema.sql` を適用した
 - [ ] GETがD1からデータを読む
 - [ ] POSTがD1へ保存する

@@ -33,8 +33,6 @@ const data = (await res.json()) as { messages: Message[] }
 
 Worker側で、ルート定義を変数として受けます。
 
-例:
-
 ```ts
 const route = app
   .get('/api/messages', (c) => {
@@ -61,32 +59,56 @@ export type AppType = typeof route
 export default app
 ```
 
-重要なのは実装コードをフロントへコピーすることではなく、**型情報をTypeScriptに渡すこと**です。
+重要なのは実装コードをフロントへコピーすることではなく、**APIの型情報をTypeScriptに渡すこと**です。
 
 ---
 
-## Step 2: `strict` を確認する
+## Step 2: 型生成とTypeScript設定を確認する
 
-Hono RPCの型推論を正しく使うため、TypeScript設定で `strict: true` を確認します。
+2026年9月時点のCloudflare公式テンプレートでは、Workerは次のように `Env` 型を使っています。
 
-テンプレートによって `tsconfig` が複数に分かれている場合があります。React側とWorker側の両方がstrict設定の対象になっているか確認してください。
+```ts
+const app = new Hono<{ Bindings: Env }>()
+```
+
+まずCloudflare設定からWorker用の型を生成します。
+
+```bash
+npm run cf-typegen
+```
+
+現行テンプレートでは、このscriptが `wrangler types` を実行し、`worker-configuration.d.ts` を更新します。
+
+Hono RPCではClient/Server双方でTypeScriptの `strict: true` が重要です。公式テンプレートでは既に有効ですが、`tsconfig.app.json` とWorker側の設定を確認してください。
+
+さらに、React側からWorkerの `AppType` を直接importすると、React側の型チェックでも `Env` の定義が必要になります。`tsconfig.app.json` の `compilerOptions` に次を追加します。
+
+```json
+{
+  "compilerOptions": {
+    "types": ["vite/client", "./worker-configuration.d.ts"]
+  }
+}
+```
+
+既存の `compilerOptions` は消さず、`types` だけ追加してください。
 
 ---
 
 ## Step 3: Hono Clientを作る
 
-React側でHono Clientを使います。
+現行テンプレートでは `App.tsx` が `src/react-app/App.tsx`、Workerが `src/worker/index.ts` にあります。
 
 ```tsx
 import { hc } from 'hono/client'
-import type { AppType } from '../../worker'
+import type { AppType } from '../worker'
 
 const client = hc<AppType>(window.location.origin)
 ```
 
-相対パスはテンプレートのファイル配置に応じて調整してください。
-
 `import type` なので、ここで欲しいのはWorkerの実行コードではなく型情報です。
+
+ファイルを別フォルダへ移した場合は、実際のディレクトリ構成に合わせて相対パスも変わります。
 
 ---
 
@@ -117,6 +139,8 @@ setMessages(data.messages)
 
 `data.messages` の型補完が効くことを確認します。
 
+前回フロント側に手書きしていたレスポンス型が不要になったことも確認してください。
+
 ---
 
 ## Step 5: POSTもRPCへ置き換える
@@ -139,9 +163,11 @@ const res = await client.api.messages.$post({
 
 `contents` はサーバーのZodスキーマと一致しないため、型エラーになるはずです。
 
+確認後は `content` に戻します。
+
 ---
 
-## Step 6: URLのタイポも試す
+## Step 6: URLのタイポと比べる
 
 普通のfetchなら、次は実行するまで気付きにくいです。
 
@@ -149,9 +175,9 @@ const res = await client.api.messages.$post({
 fetch('/api/mesages')
 ```
 
-Hono Clientでは、定義されているルートをもとにプロパティが生成されるため、存在しないルートを補完から選ぶことはできません。
+Hono Clientでは、定義されているルートをもとにプロパティが推論されるため、存在しないルートは型として扱えません。
 
-ただし「絶対に失敗しない」という意味ではありません。
+ただし「型安全 = 絶対に失敗しない」ではありません。
 
 ---
 
@@ -168,7 +194,7 @@ Hono RPCが助けてくれるのは主に**開発時のAPI契約**です。
 - 500
 - デプロイしたフロントとバックのバージョン不一致
 
-そのため、次は残します。
+そのため、次のチェックは残します。
 
 ```tsx
 if (!res.ok) {
@@ -191,7 +217,7 @@ https://example.workers.dev/api/messages
 
 そのため、基本構成ではCORS許可を追加する必要がありません。
 
-もし将来、
+将来、
 
 ```text
 Frontend: https://app.example.com
@@ -205,6 +231,8 @@ API:      https://api.example.com
 ## 完成チェック
 
 - [ ] `AppType` をWorker側からexportした
+- [ ] `npm run cf-typegen` でWorker型を更新した
+- [ ] React側のTypeScript設定から `worker-configuration.d.ts` を参照できる
 - [ ] Hono Clientを作った
 - [ ] GETを `$get()` に置き換えた
 - [ ] POSTを `$post()` に置き換えた
@@ -223,4 +251,6 @@ API:      https://api.example.com
 
 次: [第6回 D1 に永続化する](session-06.md)
 
-公式資料: https://hono.dev/docs/guides/rpc
+公式資料:
+- https://hono.dev/docs/guides/rpc
+- https://github.com/cloudflare/templates/tree/main/vite-react-template
