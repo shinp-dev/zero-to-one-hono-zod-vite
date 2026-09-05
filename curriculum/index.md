@@ -44,6 +44,29 @@ Cloudflare Worker
 | [第7回](session-07.md) | 公開・デバッグ | Cloudflareに公開し、Networkタブで通信を説明できる |
 | [発展回](session-extra.md) | 認証・認可・テスト・設計 | 「次に何を守るべきか」を判断できる |
 
+## 開始・終了チェックポイント
+
+途中から再開したいとき、コードを壊して戻せなくなったとき、完成例との差分を確認したいときは、各回の実プロジェクトを使えます。
+
+| 回 | 開始時 | 終了時 |
+|---|---|---|
+| 第1回 | [start](../checkpoints/session-01/start) | [end](../checkpoints/session-01/end) |
+| 第2回 | [start](../checkpoints/session-02/start) | [end](../checkpoints/session-02/end) |
+| 第3回 | [start](../checkpoints/session-03/start) | [end](../checkpoints/session-03/end) |
+| 第4回 | [start](../checkpoints/session-04/start) | [end](../checkpoints/session-04/end) |
+| 第5回 | [start](../checkpoints/session-05/start) | [end](../checkpoints/session-05/end) |
+| 第6回 | [start](../checkpoints/session-06/start) | [end](../checkpoints/session-06/end) |
+| 第7回 | [start](../checkpoints/session-07/start) | [end](../checkpoints/session-07/end) |
+
+各フォルダは単体のプロジェクトです。
+
+```bash
+npm install
+npm run dev
+```
+
+原則として **前回の `end` = 次回の `start`** です。詳しい運用は [チェックポイントREADME](../checkpoints/README.md) を参照してください。
+
 ## 90分の基本配分
 
 目安です。クラスの進み具合に応じて調整してください。
