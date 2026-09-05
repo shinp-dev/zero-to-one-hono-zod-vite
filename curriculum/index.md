@@ -113,7 +113,7 @@ node -v
 git --version
 ```
 
-Node.js は20以上を推奨します。
+新規環境では **Node.js 24 LTSを推奨**します。22 LTSでも構いません。Node.js 20系はEOLのため、この教材では新規導入を推奨しません。
 
 Cloudflareへのログインは第6〜7回で行うため、第1回の時点ではアカウント未設定でも構いません。
 
@@ -125,5 +125,6 @@ Cloudflareへのログインは第6〜7回で行うため、第1回の時点で�
 - Cloudflare Vite plugin: https://developers.cloudflare.com/workers/vite-plugin/
 - Hono RPC: https://hono.dev/docs/guides/rpc
 - D1 Wrangler commands: https://developers.cloudflare.com/d1/wrangler-commands/
+- Node.js releases: https://nodejs.org/en/about/previous-releases
 
 次は [第1回](session-01.md) へ進んでください。

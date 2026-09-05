@@ -70,7 +70,7 @@ AIによるコード生成を禁止する教材ではありません。ただし
 
 ## 推奨環境
 
-- Node.js 20 以上
+- Node.js 24 LTS 推奨（22 LTSでも可。20系はEOLのため新規環境では非推奨）
 - VS Code
 - Git
 - Cloudflare アカウント（第6〜7回で使用）
@@ -89,6 +89,8 @@ CLI の質問文や生成ファイルはバージョンによって多少変わ�
   - https://developers.cloudflare.com/d1/wrangler-commands/
 - Hono: RPC
   - https://hono.dev/docs/guides/rpc
+- Node.js releases
+  - https://nodejs.org/en/about/previous-releases
 
 ## 資料の管理方針
 

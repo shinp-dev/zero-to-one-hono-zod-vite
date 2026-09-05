@@ -31,7 +31,7 @@ const data = (await res.json()) as { messages: Message[] }
 
 ## Step 1: Hono側で型を公開する
 
-Worker側で、ルート定義を変数として受けます。
+Worker側で、これまで別々に定義していたGET / POSTルートを1つのチェーンへまとめ、**既存ルートを置き換えます**。
 
 ```ts
 const route = app
@@ -59,6 +59,8 @@ export type AppType = typeof route
 export default app
 ```
 
+新しいルートを追加して重複させるのではなく、第4回まで使っていた `app.get()` / `app.post()` をこの形へ整理してください。
+
 重要なのは実装コードをフロントへコピーすることではなく、**APIの型情報をTypeScriptに渡すこと**です。
 
 ---
@@ -81,17 +83,15 @@ npm run cf-typegen
 
 Hono RPCではClient/Server双方でTypeScriptの `strict: true` が重要です。公式テンプレートでは既に有効ですが、`tsconfig.app.json` とWorker側の設定を確認してください。
 
-さらに、React側からWorkerの `AppType` を直接importすると、React側の型チェックでも `Env` の定義が必要になります。`tsconfig.app.json` の `compilerOptions` に次を追加します。
+さらに、React側からWorkerの `AppType` を直接importすると、React側の型チェックでもWorkerが使う `Env` の宣言を参照できる必要があります。現行テンプレートの `tsconfig.app.json` は `src/react-app` だけをincludeしているため、ルートに生成された型定義もincludeします。
 
 ```json
 {
-  "compilerOptions": {
-    "types": ["vite/client", "./worker-configuration.d.ts"]
-  }
+  "include": ["src/react-app", "worker-configuration.d.ts"]
 }
 ```
 
-既存の `compilerOptions` は消さず、`types` だけ追加してください。
+既存の `compilerOptions` はそのまま残し、既存の `include` 配列へ `worker-configuration.d.ts` を追加してください。
 
 ---
 
@@ -230,6 +230,7 @@ API:      https://api.example.com
 
 ## 完成チェック
 
+- [ ] 既存のGET / POSTを `const route` へまとめた
 - [ ] `AppType` をWorker側からexportした
 - [ ] `npm run cf-typegen` でWorker型を更新した
 - [ ] React側のTypeScript設定から `worker-configuration.d.ts` を参照できる
