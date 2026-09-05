@@ -140,9 +140,13 @@ npx wrangler d1 execute message-board-db --local --file=./schema.sql
 
 ---
 
-## Step 6: GETをD1へ置き換える
+## Step 6: メモリ配列をD1へ置き換える
 
-メモリ配列を読む処理を削除し、D1から取得します。
+第5回で作った `const route = app...` は残します。
+
+**新しい `app.get()` / `app.post()` を追加するのではなく、既存routeのGETとPOSTの中身をD1版へ差し替えます。** Hono RPCの `AppType` もこのrouteから引き続き作れます。
+
+まずDBから受け取る行の型を用意します。
 
 ```ts
 type MessageRow = {
@@ -150,52 +154,55 @@ type MessageRow = {
   content: string
   created_at: string
 }
-
-app.get('/api/messages', async (c) => {
-  const result = await c.env.DB
-    .prepare(
-      'SELECT id, content, created_at FROM messages ORDER BY id DESC',
-    )
-    .all<MessageRow>()
-
-  const messages = result.results.map((row) => ({
-    id: row.id,
-    content: row.content,
-    createdAt: row.created_at,
-  }))
-
-  return c.json({ messages })
-})
 ```
 
-DB上の `created_at` と、API上の `createdAt` を変換しています。
+次にrouteをD1版へ変更します。
+
+```ts
+const route = app
+  .get('/api/messages', async (c) => {
+    const result = await c.env.DB
+      .prepare(
+        'SELECT id, content, created_at FROM messages ORDER BY id DESC',
+      )
+      .all<MessageRow>()
+
+    const messages = result.results.map((row) => ({
+      id: row.id,
+      content: row.content,
+      createdAt: row.created_at,
+    }))
+
+    return c.json({ messages })
+  })
+  .post(
+    '/api/messages',
+    zValidator('json', createMessageSchema),
+    async (c) => {
+      const input = c.req.valid('json')
+
+      await c.env.DB
+        .prepare('INSERT INTO messages (content) VALUES (?)')
+        .bind(input.content)
+        .run()
+
+      return c.json({ ok: true }, 201)
+    },
+  )
+
+export type AppType = typeof route
+export default app
+```
+
+これで、メモリ上の `messages` 配列は不要になります。削除してください。
+
+DB上の `created_at` と、API上の `createdAt` を変換している点にも注目します。
 
 「DBの都合をそのまま画面へ漏らさない」という境界の例です。
 
 ---
 
-## Step 7: POSTをD1へ置き換える
-
-Zodで検証した後にINSERTします。
-
-```ts
-app.post(
-  '/api/messages',
-  zValidator('json', createMessageSchema),
-  async (c) => {
-    const input = c.req.valid('json')
-
-    await c.env.DB
-      .prepare('INSERT INTO messages (content) VALUES (?)')
-      .bind(input.content)
-      .run()
-
-    return c.json({ ok: true }, 201)
-  },
-)
-```
-
-### なぜ `.bind()` を使う？
+## Step 7: なぜ `.bind()` を使う？
 
 SQL文字列へ利用者入力を直接連結しないためです。
 
@@ -212,9 +219,9 @@ SQL文字列へ利用者入力を直接連結しないためです。
 
 ## Step 8: RPCの型変化を確認する
 
-POSTレスポンスを `{ message }` から `{ ok: true }` へ変更した場合、React側で古いレスポンスプロパティを使っていれば型エラーになります。
+POSTレスポンスは、第5回の `{ message }` から `{ ok: true }` へ変わりました。
 
-これが前回導入したHono RPCの効果です。
+React側では投稿成功後に一覧を再取得するため、レスポンス本文を使っていなければ大きな変更は不要です。もし古い `data.message` などを参照していれば、Hono RPCの型によってエディタが変更箇所を教えてくれます。
 
 API仕様を変えたら、**壊れた場所をTypeScriptに探してもらう**ことができます。
 
@@ -251,6 +258,8 @@ API仕様を変えたら、**壊れた場所をTypeScriptに探してもらう**
 - [ ] `npm run cf-typegen` を実行した
 - [ ] `c.env.DB` に型補完が効く
 - [ ] ローカルDBへ `schema.sql` を適用した
+- [ ] 既存の `const route` をD1版へ差し替えた
+- [ ] メモリ上の `messages` 配列を削除した
 - [ ] GETがD1からデータを読む
 - [ ] POSTがD1へ保存する
 - [ ] SQLに入力値を直接文字列連結していない
